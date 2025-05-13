@@ -1,8 +1,8 @@
 from datetime import datetime
 import serial
 import time
-from threading import RLock
-from tomato.driverinterface_2_0 import Attr, ModelInterface, ModelDevice, Val, Task
+from tomato.driverinterface_2_1 import Attr, ModelInterface, ModelDevice
+from tomato.driverinterface_2_1.types import Val
 from functools import wraps
 import xarray as xr
 import logging
@@ -21,15 +21,16 @@ SERIAL_DELAY = 0.1
 def serial_delay(func):
     @wraps(func)
     def wrapper(self: ModelDevice, **kwargs):
-        with self.portlock:
-            if time.perf_counter() - self.last_action < SERIAL_DELAY:
-                time.sleep(SERIAL_DELAY)
-            return func(self, **kwargs)
+        if time.perf_counter() - self.last_action < SERIAL_DELAY:
+            time.sleep(SERIAL_DELAY)
+        return func(self, **kwargs)
 
     return wrapper
 
 
 class DriverInterface(ModelInterface):
+    idle_measurement_interval = 60
+
     def DeviceFactory(self, key, **kwargs):
         return Device(self, key, **kwargs)
 
@@ -37,9 +38,6 @@ class DriverInterface(ModelInterface):
 class Device(ModelDevice):
     s: serial.Serial
     """:class:`serial.Serial` port, used for communication with the device."""
-
-    portlock: RLock
-    """:class:`threading.RLock`, used to ensure exclusive access to the serial port"""
 
     last_action: float
     """a timestamp of last serial read/write obtained using :func:`time.perf_counter`"""
@@ -61,7 +59,6 @@ class Device(ModelDevice):
             exclusive=True,
             timeout=1,
         )
-        self.portlock = RLock()
         self.last_action = time.perf_counter()
 
     def attrs(self, **kwargs) -> dict[str, Attr]:
@@ -76,24 +73,17 @@ class Device(ModelDevice):
         return attrs_dict
 
     def set_attr(self, attr: str, val: Val, **kwargs: dict) -> None:
+        """Note that tomato-drycal has no RW attributes."""
         assert attr in self.attrs(), f"unknown attr: {attr!r}"
         props = self.attrs()[attr]
         assert props.rw
         return None
 
     def get_attr(self, attr: str, **kwargs: dict) -> Val:
-        """
-        Retrieves the value of an attribute from the instrument.
-
-        Checks whether the attribute is in allowed attrs. Converts return values to
-        expected types using maps.
-
-        """
         assert attr in self.attrs(), f"unknown attr: {attr!r}"
         return getattr(self, attr)
 
     def capabilities(self, **kwargs) -> set:
-        """Returns a set of capabilities supported by this device."""
         caps = {"measure_flow"}
         return caps
 
@@ -114,10 +104,7 @@ class Device(ModelDevice):
             coords={"uts": (["uts"], [uts])},
         )
 
-    def prepare_task(self, task: Task, **kwargs: dict):
-        super().prepare_task(task=task, **kwargs)
-
-    def reset(self, **kwargs):
+    def reset(self, **kwargs) -> None:
         super().reset(**kwargs)
         self._communicate(b"$RESET DC\r")
 
@@ -133,6 +120,7 @@ class Device(ModelDevice):
         self.s.write(b"$GET DS DC\r")
         ret = self.s.readline().decode()
         while ret == "":
-            time.sleep(0.1)
+            time.sleep(SERIAL_DELAY)
             ret = self.s.readline().decode()
+        self.last_action = time.perf_counter()
         return ret
