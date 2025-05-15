@@ -20,10 +20,10 @@ SERIAL_DELAY = 0.1
 
 def serial_delay(func):
     @wraps(func)
-    def wrapper(self: ModelDevice, **kwargs):
+    def wrapper(self: ModelDevice, *args, **kwargs):
         if time.perf_counter() - self.last_action < SERIAL_DELAY:
             time.sleep(SERIAL_DELAY)
-        return func(self, **kwargs)
+        return func(self, *args, **kwargs)
 
     return wrapper
 
