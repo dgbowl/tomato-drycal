@@ -45,7 +45,12 @@ class Device(ModelDevice):
     @property
     def piston(self) -> int:
         ret = self._communicate(b"$GET WAI DC\r")
-        return int(ret.split(",")[0])
+        data = ret.split(",")[0]
+        if data == "":
+            return None
+        else:
+            return int(data)
+
 
     def __init__(self, driver: ModelInterface, key: tuple[str, int], **kwargs: dict):
         super().__init__(driver, key, **kwargs)
@@ -93,16 +98,17 @@ class Device(ModelDevice):
             return None
         ret = self._get_data()
         parts = [p.replace("\x00", "").strip() for p in ret.split(",")]
-        uts = datetime.now().timestamp()
-        data_vars = {
-            "flow": (["uts"], [float(parts[0])], {"units": UNIT_MAP[parts[2]]}),
-            "temperature": (["uts"], [float(parts[5])], {"units": UNIT_MAP[parts[6]]}),
-            "pressure": (["uts"], [float(parts[7])], {"units": UNIT_MAP[parts[8]]}),
-        }
-        self.last_data = xr.Dataset(
-            data_vars=data_vars,
-            coords={"uts": (["uts"], [uts])},
-        )
+        if len(parts) > 8:
+            uts = datetime.now().timestamp()
+            data_vars = {
+                "flow": (["uts"], [float(parts[0])], {"units": UNIT_MAP[parts[2]]}),
+                "temperature": (["uts"], [float(parts[5])], {"units": UNIT_MAP[parts[6]]}),
+                "pressure": (["uts"], [float(parts[7])], {"units": UNIT_MAP[parts[8]]}),
+            }
+            self.last_data = xr.Dataset(
+                data_vars=data_vars,
+                coords={"uts": (["uts"], [uts])},
+            )
 
     def reset(self, **kwargs) -> None:
         super().reset(**kwargs)
