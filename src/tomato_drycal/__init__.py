@@ -45,11 +45,12 @@ class Device(ModelDevice):
     @property
     def piston(self) -> int:
         ret = self._communicate(b"$GET WAI DC\r")
-        data = ret.split(",")[0]
-        if data == "":
+        logging.critical(f"{ret=}")
+        parts = [p.replace("\x00", "").strip() for p in ret.split(",")]
+        if parts[0] == "":
             return None
         else:
-            return int(data)
+            return int(parts[0])
 
 
     def __init__(self, driver: ModelInterface, key: tuple[str, int], **kwargs: dict):
